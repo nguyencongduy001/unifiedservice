@@ -2,9 +2,9 @@
 test:
   database:
     postgres:
-      url: 'jdbc:postgresql://172.20.176.1:5432/unifiedservice_test'
-      username: postgres
-      password: postgres
+      url: ''
+      username: ''
+      password: ''
     h2:
       url: 'jdbc:h2:mem:unifiedservice-test;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DEFAULT_NULL_ORDERING=HIGH;DB_CLOSE_DELAY=-1;LOCK_TIMEOUT=10000'
       username: sa
