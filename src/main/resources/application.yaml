@@ -1,0 +1,10 @@
+spring:
+  application:
+    name: unifiedservice
+  config:
+    import: classpath:datasource.yaml
+  jpa:
+    open-in-view: false
+
+app:
+  seed-demo-data: true

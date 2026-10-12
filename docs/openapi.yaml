@@ -1,0 +1,383 @@
+openapi: 3.1.0
+
+info:
+  title: Unified Service Scheduler API
+  description: >
+    Books vehicle service appointments at car dealerships. An appointment is
+    only confirmed when a **service bay** and a **qualified technician** are
+    both free for the entire duration of the service — checked in real time
+    and protected against double-booking under concurrency.
+
+    The customer is implied by the vehicle's owner, and the service duration
+    comes from the service type: the client never sends an end time.
+  version: 0.0.1-SNAPSHOT
+
+servers:
+  - url: http://{host}:8080
+    description: >-
+      Local development server (the application defaults to port 8080).
+      Replace the `{host}` variable to point at any other deployment.
+    variables:
+      host:
+        default: localhost
+        description: Host running the Unified Service Scheduler.
+
+tags:
+  - name: Appointments
+    description: Booking and retrieving service appointments.
+  - name: Availability
+    description: Real-time availability of bays and qualified technicians.
+
+paths:
+  /api/appointments:
+    post:
+      tags: [Appointments]
+      summary: Book a service appointment
+      description: >
+        Creates a confirmed appointment for the requested vehicle, service
+        type and dealership starting at `desiredStart`. Succeeds only if a
+        service bay **and** a qualified technician are both free for the whole
+        service duration. On success the response is `201 Created` and the
+        assigned resources are echoed in the body.
+      operationId: createAppointment
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateAppointmentRequest'
+            example:
+              vehicleId: 1
+              serviceTypeId: 1
+              dealershipId: 1
+              desiredStart: '2026-10-13T09:00:00'
+      responses:
+        '201':
+          description: Appointment booked and persisted as CONFIRMED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentResponse'
+              example:
+                id: 1
+                status: CONFIRMED
+                customerId: 1
+                customerName: Jane Doe
+                vehicleId: 1
+                vehicleRegistration: KL-01-DEMO
+                serviceTypeId: 1
+                serviceTypeName: Oil Change
+                dealershipId: 1
+                dealershipName: Keyloop Demo Dealership
+                serviceBayId: 1
+                serviceBayName: Bay 1
+                technicianId: 1
+                technicianName: Alice Ahmed
+                startAt: '2026-10-13T09:00:00'
+                endAt: '2026-10-13T09:30:00'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+
+  /api/appointments/{id}:
+    get:
+      tags: [Appointments]
+      summary: Get an appointment by id
+      description: Returns the appointment with the given id, or `404` if it does not exist.
+      operationId: getAppointment
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/AppointmentId'
+      responses:
+        '200':
+          description: The requested appointment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AppointmentResponse'
+              example:
+                id: 1
+                status: CONFIRMED
+                customerId: 1
+                customerName: Jane Doe
+                vehicleId: 1
+                vehicleRegistration: KL-01-DEMO
+                serviceTypeId: 1
+                serviceTypeName: Oil Change
+                dealershipId: 1
+                dealershipName: Keyloop Demo Dealership
+                serviceBayId: 1
+                serviceBayName: Bay 1
+                technicianId: 1
+                technicianName: Alice Ahmed
+                startAt: '2026-10-13T09:00:00'
+                endAt: '2026-10-13T09:30:00'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/dealerships/{dealershipId}/availability:
+    get:
+      tags: [Availability]
+      summary: Check real-time availability at a dealership
+      description: >
+        Returns the service bays of the dealership and the technicians
+        qualified for the requested service type that have **no confirmed
+        appointment overlapping** `[startAt, startAt + duration)`. The
+        duration is taken from the service type.
+      operationId: getAvailability
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/DealershipId'
+        - name: serviceTypeId
+          in: query
+          required: true
+          description: Id of the service type to check.
+          schema:
+            type: integer
+            format: int64
+        - name: startAt
+          in: query
+          required: true
+          description: >
+            Desired start time as an ISO-8601 date-time
+            (`yyyy-MM-dd'T'HH:mm:ss`). Determines the end of the window
+            together with the service type's duration.
+          schema:
+            $ref: '#/components/schemas/LocalDateTime'
+      responses:
+        '200':
+          description: Snapshot of the still-bookable bays and qualified technicians.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AvailabilityResponse'
+              example:
+                dealershipId: 1
+                dealershipName: Keyloop Demo Dealership
+                serviceTypeId: 1
+                serviceDurationMinutes: 30
+                startAt: '2026-10-13T09:00:00'
+                endAt: '2026-10-13T09:30:00'
+                availableServiceBays:
+                  - id: 1
+                    name: Bay 1
+                  - id: 2
+                    name: Bay 2
+                availableTechnicians:
+                  - id: 1
+                    name: Alice Ahmed
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+components:
+  parameters:
+    AppointmentId:
+      name: id
+      in: path
+      required: true
+      description: Id of the appointment.
+      schema:
+        type: integer
+        format: int64
+    DealershipId:
+      name: dealershipId
+      in: path
+      required: true
+      description: Id of the dealership.
+      schema:
+        type: integer
+        format: int64
+
+  responses:
+    BadRequest:
+      description: Validation failed. The `fieldErrors` map names each offending field.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            status: 400
+            error: Bad Request
+            message: Validation failed
+            fieldErrors:
+              desiredStart: desiredStart must be in the future
+              vehicleId: vehicleId is required
+    NotFound:
+      description: A referenced resource or appointment does not exist.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            status: 404
+            error: Not Found
+            message: Vehicle 99 not found
+            fieldErrors: {}
+    Conflict:
+      description: >
+        No service bay and/or no qualified technician is free for the whole
+        service duration. The message names which resource is missing.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            status: 409
+            error: Conflict
+            message: "No service bay and no qualified technician available at dealership 'Keyloop Demo Dealership' between 2026-10-13T09:00 and 2026-10-13T09:30"
+            fieldErrors: {}
+
+  schemas:
+    LocalDateTime:
+      type: string
+      description: >
+        ISO-8601 date-time with no timezone offset, exactly as the API
+        serializes java.time.LocalDateTime (seconds always shown), e.g.
+        `2026-10-13T09:00:00`.
+      pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$'
+
+    # ---------------------------------------------------------------
+    # Request bodies
+    # ---------------------------------------------------------------
+    CreateAppointmentRequest:
+      type: object
+      description: >
+        A request to book a service appointment. The customer is implied by the
+        vehicle's owner; the service bay and technician are assigned by the
+        service once availability has been confirmed.
+      required: [vehicleId, serviceTypeId, dealershipId, desiredStart]
+      properties:
+        vehicleId:
+          type: integer
+          format: int64
+          description: Id of the vehicle to service.
+        serviceTypeId:
+          type: integer
+          format: int64
+          description: Id of the service type; determines the duration.
+        dealershipId:
+          type: integer
+          format: int64
+          description: Id of the dealership where the work will happen.
+        desiredStart:
+          $ref: '#/components/schemas/LocalDateTime'
+          description: Desired start time. Must be in the future.
+
+    # ---------------------------------------------------------------
+    # Response bodies
+    # ---------------------------------------------------------------
+    AppointmentResponse:
+      type: object
+      description: Full view of a booked appointment and the resources assigned to it.
+      properties:
+        id:
+          type: integer
+          format: int64
+        status:
+          type: string
+          description: Lifecycle state of the appointment.
+          enum: [CONFIRMED, CANCELLED]
+        customerId:
+          type: integer
+          format: int64
+        customerName:
+          type: string
+        vehicleId:
+          type: integer
+          format: int64
+        vehicleRegistration:
+          type: string
+        serviceTypeId:
+          type: integer
+          format: int64
+        serviceTypeName:
+          type: string
+        dealershipId:
+          type: integer
+          format: int64
+        dealershipName:
+          type: string
+        serviceBayId:
+          type: integer
+          format: int64
+        serviceBayName:
+          type: string
+        technicianId:
+          type: integer
+          format: int64
+        technicianName:
+          type: string
+        startAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        endAt:
+          $ref: '#/components/schemas/LocalDateTime'
+          description: Start time plus the service type's duration.
+
+    AvailabilityResponse:
+      type: object
+      description: Snapshot of the resources still free for the requested service at the requested time.
+      properties:
+        dealershipId:
+          type: integer
+          format: int64
+        dealershipName:
+          type: string
+        serviceTypeId:
+          type: integer
+          format: int64
+        serviceDurationMinutes:
+          type: integer
+          format: int32
+        startAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        endAt:
+          $ref: '#/components/schemas/LocalDateTime'
+        availableServiceBays:
+          type: array
+          description: Bays with no confirmed appointment overlapping the window.
+          items:
+            $ref: '#/components/schemas/ResourceRef'
+        availableTechnicians:
+          type: array
+          description: Technicians qualified for the service type and free for the whole window.
+          items:
+            $ref: '#/components/schemas/ResourceRef'
+
+    ResourceRef:
+      type: object
+      description: Light reference to a bookable resource.
+      properties:
+        id:
+          type: integer
+          format: int64
+        name:
+          type: string
+
+    # ---------------------------------------------------------------
+    # Error contract
+    # ---------------------------------------------------------------
+    ApiError:
+      type: object
+      description: Uniform error body produced by the global exception handler.
+      properties:
+        status:
+          type: integer
+          format: int32
+          description: HTTP status code.
+        error:
+          type: string
+          description: HTTP reason phrase, e.g. `Conflict`.
+        message:
+          type: string
+          description: Human-readable explanation.
+        fieldErrors:
+          type: object
+          description: >
+            Per-field validation messages. Present only for `400` responses;
+            empty object otherwise.
+          additionalProperties:
+            type: string
